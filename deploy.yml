@@ -41,6 +41,10 @@ jobs:
 
       - name: Write deploy marker
         run: |
-          echo "{\"commit\":\"${GITHUB_SHA}\",\"time\":\"$(date -u +%FT%TZ)\"}" \
-          | ssh "$DEPLOY_USER@$DEPLOY_HOST" "cat > $DEPLOY_PATH/__health.json"
+          # ensure target dir exists
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
+          # write JSON with commit + UTC time
+          printf '{"commit":"%s","time":"%s"}' "${GITHUB_SHA}" "$(date -u +%FT%TZ)" \
+            | ssh "$DEPLOY_USER@$DEPLOY_HOST" "cat > '$DEPLOY_PATH/__health.json'"
+          # reload nginx (deploy user is allowed to do this without a password)
           ssh "$DEPLOY_USER@$DEPLOY_HOST" 'sudo systemctl reload nginx || true'
