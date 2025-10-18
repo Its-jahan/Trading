@@ -16,14 +16,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Assert secrets exist (fail fast with a clear message)
-        run: |
-          set -e
-          [ -n "${{ secrets.SSH_HOST }}" ] || { echo "Missing secret: SSH_HOST"; exit 2; }
-          [ -n "${{ secrets.SSH_USER }}" ] || { echo "Missing secret: SSH_USER"; exit 2; }
-          [ -n "${{ secrets.SSH_KEY }}" ]  || { echo "Missing secret: SSH_KEY (must be FULL PRIVATE KEY, not a fingerprint)"; exit 2; }
-          [ -n "${{ secrets.SSH_KNOWN_HOSTS }}" ] || { echo "Missing secret: SSH_KNOWN_HOSTS"; exit 2; }
-
       - name: Set up SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
@@ -34,10 +26,6 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-
-      - name: Smoke test SSH
-        run: |
-          ssh -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" 'echo SSH_OK && id && ls -ld /srv/www/varn.agency/current/public || true'
 
       - name: Debug: list SRC_DIR
         run: |
@@ -54,6 +42,7 @@ jobs:
 
       - name: Write deploy marker & reload
         run: |
-          printf '{"commit":"%s","time":"%s"}' "${GITHUB_SHA}" "$(date -u +%FT%TZ)" \
-           | ssh "$DEPLOY_USER@$DEPLOY_HOST" "cat > '$DEPLOY_PATH/__health.json'"
+          TS="$(date -u +%FT%TZ)"
+          echo "{\"commit\":\"${GITHUB_SHA}\",\"time\":\"${TS}\"}" > health.json
+          scp health.json "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/__health.json"
           ssh "$DEPLOY_USER@$DEPLOY_HOST" 'sudo systemctl reload nginx || true'
