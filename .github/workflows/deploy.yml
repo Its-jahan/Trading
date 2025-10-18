@@ -1,7 +1,6 @@
 name: Deploy varn.agency
 on:
-  push:
-    branches: [ main ]
+  push: { branches: [ main ] }
   workflow_dispatch:
 
 env:
@@ -9,78 +8,31 @@ env:
   DEPLOY_USER: ${{ secrets.SSH_USER }}
   DEPLOY_PATH: /srv/www/varn.agency/current/public
   SRC_DIR: ./public
-  SSH_PORT: ${{ secrets.SSH_PORT }} # optional, leave empty if using default 22
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash
+    defaults: { run: { shell: bash } }
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Check required secrets and env
-        run: |
-          set -e
-          # Check the obvious ones. Secrets are masked if printed; this only checks emptiness.
-          for var in DEPLOY_HOST DEPLOY_USER SSH_KEY; do
-            if [ -z "${!var}" ]; then
-              echo "ERROR: $var is empty. Make sure corresponding secret is set."
-              exit 1
-            fi
-          done
-          echo "Required env/secrets appear present."
-
-      - name: Set up SSH agent
+      - name: SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.SSH_KEY }}
+          log-public-key: true
 
-      - name: Write known_hosts (or discover via ssh-keyscan)
-        run: |
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          if [ -n "${{ secrets.SSH_KNOWN_HOSTS }}" ]; then
-            printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
-            echo "Wrote SSH_KNOWN_HOSTS from secret."
-          else
-            echo "Warning: SSH_KNOWN_HOSTS secret empty. Falling back to ssh-keyscan (insecure)."
-            # Use SSH_PORT if provided
-            PORT=${SSH_PORT:-22}
-            ssh-keyscan -p "$PORT" "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
-          fi
-          chmod 600 ~/.ssh/known_hosts
+      - name: known_hosts
+        run: mkdir -p ~/.ssh && printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts && chmod 600 ~/.ssh/known_hosts
 
       - name: Debug: list SRC_DIR
-        run: |
-          echo "SRC_DIR=$SRC_DIR"
-          ls -lah "$SRC_DIR" || true
-
-      - name: Test SSH connection (verbose, non-fatal)
-        id: ssh-test
-        continue-on-error: true
-        run: |
-          set -x
-          PORT=${SSH_PORT:-22}
-          # Use BatchMode to avoid interactive password prompt; this returns a non-zero exit code on failure.
-          ssh -o BatchMode=yes -o ConnectTimeout=10 -p "$PORT" "$DEPLOY_USER@$DEPLOY_HOST" "echo SSH_OK" || echo "SSH test failed (see above for details)"
+        run: echo "SRC_DIR=$SRC_DIR" && ls -lah "$SRC_DIR"
 
       - name: Ensure target dir exists
-        run: |
-          PORT=${SSH_PORT:-22}
-          ssh -p "$PORT" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
+        run: ssh "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
 
-      - name: Deploy via rsync (verbose)
-        run: |
-          PORT=${SSH_PORT:-22}
-          rsync -azv -e "ssh -p $PORT" --delete "$SRC_DIR"/ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+      - name: Deploy via rsync
+        run: rsync -azv --delete "$SRC_DIR"/ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
 
       - name: Write deploy marker & reload
-        run: |
-          PORT=${SSH_PORT:-22}
-          TS="$(date -u +%FT%TZ)"
-          printf '{"commit":"%s","time":"%s"}\n' "${GITHUB_SHA}" "$TS" > __health.json
-          scp -P "$PORT" __health.json "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/__health.json"
-          ssh -p "$PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'sudo systemctl reload nginx || true'
+        run: ts=$(date -u +%FT%TZ) && printf '{"commit":"%s","time":"%s"}\n' "${GITHUB_SHA}" "$ts" | ssh "$DEPLOY_USER@$DEPLOY_HOST" "cat > '$DEPLOY_PATH/__health.json'" && ssh "$DEPLOY_USER@$DEPLOY_HOST" 'sudo systemctl reload nginx || true'
