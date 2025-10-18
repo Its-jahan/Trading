@@ -9,6 +9,17 @@ env:
   DEPLOY_USER: ${{ secrets.SSH_USER }}
   DEPLOY_PATH: /srv/www/varn.agency/current/public
   SRC_DIR: ./public   # ← change to ./dist (build output) or ./ (repo root)
+  - name: Debug: show SRC_DIR contents
+  run: |
+    echo "SRC_DIR=$SRC_DIR"
+    ls -lah "$SRC_DIR" || { echo "SRC_DIR missing"; exit 2; }
+
+- name: Debug: show DEPLOY_PATH
+  run: echo "DEPLOY_PATH=$DEPLOY_PATH"
+- name: Deploy via rsync
+  run: |
+    rsync -azv --delete \
+      "$SRC_DIR"/ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
 
 jobs:
   deploy:
@@ -38,13 +49,9 @@ jobs:
           rsync -az --delete \
             --chmod=Du=rwx,Dg=rwx,Do=rx,Fu=rw,Fg=rw,Fo=r \
             "$SRC_DIR"/ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
-
       - name: Write deploy marker
         run: |
-          # ensure target dir exists
-          ssh "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
-          # write JSON with commit + UTC time
           printf '{"commit":"%s","time":"%s"}' "${GITHUB_SHA}" "$(date -u +%FT%TZ)" \
             | ssh "$DEPLOY_USER@$DEPLOY_HOST" "cat > '$DEPLOY_PATH/__health.json'"
-          # reload nginx (deploy user is allowed to do this without a password)
           ssh "$DEPLOY_USER@$DEPLOY_HOST" 'sudo systemctl reload nginx || true'
+
