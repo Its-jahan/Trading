@@ -1,0 +1,51 @@
+name: Deploy varn.agency
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-varn-agency
+  cancel-in-progress: true
+
+env:
+  DEPLOY_HOST: ${{ secrets.SSH_HOST }}
+  DEPLOY_USER: ${{ secrets.SSH_USER }}
+  DEPLOY_PATH: /srv/www/varn.agency/current/public
+  SRC_DIR: ./public   # ← change to ./dist (build output) or ./ (repo root) as needed
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # If you have a build step (React/Vite/etc.), uncomment and edit:
+      # - name: Build
+      #   run: |
+      #     npm ci
+      #     npm run build
+      #   # and set SRC_DIR to ./dist above
+
+      - name: Set up SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_KEY }}
+
+      - name: Trust server host key
+        run: |
+          mkdir -p ~/.ssh
+          if [ -n "${{ secrets.SSH_KNOWN_HOSTS }}" ]; then
+            printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          else
+            ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          fi
+
+      - name: Deploy via rsync
+        run: |
+          rsync -az --delete \
+            --chmod=Du=rwx,Dg=rwx,Do=rx,Fu=rw,Fg=rw,Fo=r \
+            "$SRC_DIR"/ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+
+      - name: Reload Nginx
+        run: ssh "$DEPLOY_USER@$DEPLOY_HOST" 'sudo systemctl reload nginx || true'
