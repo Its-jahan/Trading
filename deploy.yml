@@ -8,7 +8,7 @@ env:
   DEPLOY_HOST: ${{ secrets.SSH_HOST }}
   DEPLOY_USER: ${{ secrets.SSH_USER }}
   DEPLOY_PATH: /srv/www/varn.agency/current/public
-  SRC_DIR: ./public   # change to ./dist or ./ if needed
+  SRC_DIR: ./public   # ← change to ./dist (build output) or ./ (repo root)
 
 jobs:
   deploy:
@@ -16,7 +16,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # - run: npm ci && npm run build   # if you build; then set SRC_DIR=./dist
+      # If you build (React/Vite/etc.), uncomment and set SRC_DIR=./dist
+      # - run: npm ci && npm run build
 
       - name: Set up SSH agent
         uses: webfactory/ssh-agent@v0.9.0
@@ -27,7 +28,7 @@ jobs:
         run: |
           mkdir -p ~/.ssh
           if [ -n "${{ secrets.SSH_KNOWN_HOSTS }}" ]; then
-            printf "%s\n" "${{ secrets.SSH_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+            printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
           else
             ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
           fi
@@ -38,5 +39,8 @@ jobs:
             --chmod=Du=rwx,Dg=rwx,Do=rx,Fu=rw,Fg=rw,Fo=r \
             "$SRC_DIR"/ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
 
-      - name: Reload Nginx
-        run: ssh "$DEPLOY_USER@$DEPLOY_HOST" 'sudo systemctl reload nginx || true'
+      - name: Write deploy marker
+        run: |
+          echo "{\"commit\":\"${GITHUB_SHA}\",\"time\":\"$(date -u +%FT%TZ)\"}" \
+          | ssh "$DEPLOY_USER@$DEPLOY_HOST" "cat > $DEPLOY_PATH/__health.json"
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" 'sudo systemctl reload nginx || true'
