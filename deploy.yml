@@ -4,15 +4,11 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
-concurrency:
-  group: deploy-varn-agency
-  cancel-in-progress: true
-
 env:
   DEPLOY_HOST: ${{ secrets.SSH_HOST }}
   DEPLOY_USER: ${{ secrets.SSH_USER }}
   DEPLOY_PATH: /srv/www/varn.agency/current/public
-  SRC_DIR: ./public   # ← change to ./dist (build output) or ./ (repo root) as needed
+  SRC_DIR: ./public   # change to ./dist or ./ if needed
 
 jobs:
   deploy:
@@ -20,12 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # If you have a build step (React/Vite/etc.), uncomment and edit:
-      # - name: Build
-      #   run: |
-      #     npm ci
-      #     npm run build
-      #   # and set SRC_DIR to ./dist above
+      # - run: npm ci && npm run build   # if you build; then set SRC_DIR=./dist
 
       - name: Set up SSH agent
         uses: webfactory/ssh-agent@v0.9.0
@@ -36,7 +27,7 @@ jobs:
         run: |
           mkdir -p ~/.ssh
           if [ -n "${{ secrets.SSH_KNOWN_HOSTS }}" ]; then
-            printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+            printf "%s\n" "${{ secrets.SSH_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
           else
             ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
           fi
