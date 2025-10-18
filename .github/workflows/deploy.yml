@@ -25,8 +25,6 @@ jobs:
       - name: known_hosts
         run: mkdir -p ~/.ssh && printf '%s\n' "${{ secrets.SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts && chmod 600 ~/.ssh/known_hosts
 
-      - name: Debug: list SRC_DIR
-        run: echo "SRC_DIR=$SRC_DIR" && ls -lah "$SRC_DIR"
 
       - name: Ensure target dir exists
         run: ssh "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
